@@ -64,6 +64,35 @@ describe("acceptModelAssessment", () => {
     expect(input).toEqual(snapshot);
   });
 
+  it("keeps severity, confidence, and evidence independent across valid findings", () => {
+    const input = sampleModelInput();
+    const finding = input.findings[0];
+    if (!finding) {
+      throw new Error("sample finding missing");
+    }
+    input.findings.push({
+      ...finding,
+      category: "housekeeping",
+      title: "Stored materials in the walkway",
+      severity: "low",
+      likelihood: "unlikely",
+      confidence: 0.4,
+      observation: "Boxes appear to narrow the walking route in the supplied frame.",
+      interpretation: "This may be a housekeeping issue.",
+      recommendedControls: ["Consider moving the stored materials clear of the route."],
+    });
+
+    const result = acceptModelAssessment(input, sampleProvenanceContext());
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.draft.findings.map((item) => item.severity)).toEqual(["medium", "low"]);
+    expect(result.draft.findings.map((item) => item.confidence)).toEqual([0.62, 0.4]);
+    expect(result.draft.findings.map((item) => item.riskScore)).toEqual([4, 1]);
+    expect(result.draft.findings.map((item) => item.category)).toEqual(["slips_trips", "housekeeping"]);
+  });
+
   it("does not repair or persist malformed model output", () => {
     const input = sampleModelInput();
     const snapshot = structuredClone(input);

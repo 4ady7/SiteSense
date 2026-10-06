@@ -1,0 +1,89 @@
+**Functional status: NOT READY**
+
+The repository does not implement the assessment journey. A user can open a disclaimer page and read `GET /api/health`. There is no upload, storage, pipeline runner, transcription, model call, retrieval, database, results view, dashboard, evaluation, or PDF. Those stages cannot pass, because there is no code to run.
+
+What does exist is the trust layer: taxonomy, risk score, pipeline transition rules, a strict model schema, and provenance checks. I traced adversarial payloads through that layer. Four checks were weaker than the tests claimed. Those are fixed. I did not add the missing product around them.
+
+## Critical path
+
+| Stage | Result |
+|---|---|
+| Open the app | Pass. The page says this is a student prototype and that human review remains necessary. It does not say analysis is complete. |
+| Start an assessment, upload, voice, submit | Not implemented |
+| Processing and pipeline completion | Not implemented. `canTransition` only decides whether one stage name may follow another. |
+| Frame extraction, transcription, model analysis | Not implemented |
+| Structured validation | Pass, after the blank-text fix below |
+| Evidence validation | Pass, after the context fixes below |
+| Retrieval and a guidance corpus | Not implemented. A citation is accepted only when its chunk id was in the list the caller supplied. |
+| Persistence, results, dashboard, PDF | Not implemented. `GET /api/assessments` returns 404. |
+
+Demo mode is not implemented. There is no provider, fixture runner, or “demo” label in the UI. `sample-assessment.ts` is a unit-test fixture, and its comment says it is not a demo assessment.
+
+## Bugs found
+
+**P1. A caller could disable the timestamp check.**
+
+- Location: `src/validation/provenance.ts`
+- Problem: `timestampToleranceSeconds: 1000` made a timestamp of 100 seconds match a frame at 7.4 seconds. The function returned no issues.
+- Root cause: the tolerance override had no upper bound.
+- Fix: a tolerance below 0, non-finite, or above 0.25 seconds is rejected as `invalid_timestamp_tolerance`. The model timestamp is not rewritten.
+- Regression test: `rejects a widened timestamp tolerance instead of treating a distant timestamp as a match`
+
+**P1. One evidence context could mix two media items.**
+
+- Location: `src/validation/provenance.ts`
+- Problem: frames from `media_001` and `media_other` were both eligible as evidence for the same assessment.
+- Root cause: `mediaId` was stored on the frame and never compared.
+- Fix: more than one media id returns `mixed_media`, and no evidence from that context is treated as a match.
+- Regression test: `rejects frames from more than one media item in a single context`
+
+**P1. A corrupt frame record could sit inside the match set.**
+
+- Location: `src/validation/provenance.ts`
+- Problem: a stored timestamp of `-0.1` is within 0.25 seconds of a model timestamp of `0`, so the negative frame would have counted as a match.
+- Root cause: frame records supplied by the application were not checked before matching.
+- Fix: a frame needs a token id, a token media id, a non-negative integer index, and a finite non-negative timestamp. Invalid records return `invalid_frame_record` and are excluded. Duplicate frame indexes are rejected the same way.
+- Regression test: `rejects a frame record that could bless an out-of-range timestamp`
+
+**P2. Whitespace counted as an observation.**
+
+- Location: `src/schemas/assessment.ts`
+- Problem: a summary of `"   "` and an observation of `"\n\t"` passed the schema.
+- Root cause: `min(1)` counts spaces.
+- Fix: required text must contain a non-whitespace character. The value is rejected, not trimmed into a different string.
+- Regression test: `rejects blank text, impossible confidence, and oversized payloads`
+
+These model payloads were already rejected, and that test now locks them in: confidence `-1`, `999`, `null`, and `"high"`; a negative evidence timestamp; a frame id of `../etc/passwd`; a missing summary; an extra `ignorePreviousInstructions` field; and 31 findings.
+
+One invalid finding still rejects the entire draft. Dropping only the bad finding would hide part of the model response. The existing test `does not produce a draft when any citation or evidence reference is fabricated` still requires that.
+
+## Tests performed
+
+- Unit tests: 31 passed, across 7 files. This was 26 before this audit.
+- Integration tests: 0. There is no database or API for assessments.
+- E2E tests: 0. There is no flow to drive.
+- Typecheck: passed.
+- Lint: passed, with no project warnings.
+- Production build: passed. Routes are `/`, `/_not-found`, and `/api/health`.
+- Database migrations: none exist.
+- Smoke test against the production server: `/` returned 200 and the prototype disclaimer; `/api/health` returned `prototype: true` and `humanReviewRequired: true`; `/api/assessments` returned 404.
+
+No dashboard numbers, placeholder findings, or fake progress were found in application code. The only fixture is the unit-test sample.
+
+## Remaining risks
+
+- The critical journey cannot be completed. Refreshing during processing, double-submit, and cross-assessment leakage cannot be tested, because assessments are not stored.
+- The schema can still accept a confident finding whose words are untrue, as long as the frame id and timestamp match a real frame. The trust layer checks structure and provenance. It does not decide whether the observation is correct.
+- Pipeline names such as `transcribing` and `retrieving_guidance` describe stages that have no implementation. `canTransition("persisting", "completed")` does not know whether validation passed.
+- `.env.example` lists model, database, and storage keys. No code reads them.
+- `publishingBranch` is an empty tracked file with no behavior.
+
+## Manual tests worth doing
+
+1. Open `/` and confirm the prototype wording.
+2. Open `/api/health` and confirm `humanReviewRequired` is true.
+3. Confirm there is no control for upload, analysis, or a report.
+
+## Release recommendation
+
+**NOT READY**

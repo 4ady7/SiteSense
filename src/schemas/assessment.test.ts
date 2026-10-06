@@ -72,6 +72,42 @@ describe("model assessment schema", () => {
     ).toBe(false);
   });
 
+  it("rejects blank text, impossible confidence, and oversized payloads", () => {
+    const input = sampleModelInput();
+    const finding = input.findings[0];
+    const evidence = finding?.evidence[0];
+    if (!finding || !evidence) {
+      throw new Error("sample finding missing");
+    }
+
+    expect(modelAssessmentSchema.safeParse({ ...input, assessmentSummary: "   " }).success).toBe(false);
+    expect(modelAssessmentSchema.safeParse({ ...input, findings: [{ ...finding, observation: "\n\t" }] }).success).toBe(false);
+    expect(modelAssessmentSchema.safeParse({ ...input, findings: [{ ...finding, confidence: -1 }] }).success).toBe(false);
+    expect(modelAssessmentSchema.safeParse({ ...input, findings: [{ ...finding, confidence: 999 }] }).success).toBe(false);
+    expect(modelAssessmentSchema.safeParse({ ...input, findings: [{ ...finding, confidence: null }] }).success).toBe(false);
+    expect(modelAssessmentSchema.safeParse({ ...input, findings: [{ ...finding, confidence: "high" }] }).success).toBe(false);
+    expect(
+      modelAssessmentSchema.safeParse({
+        ...input,
+        findings: [{ ...finding, evidence: [{ ...evidence, timestampSeconds: -1 }] }],
+      }).success,
+    ).toBe(false);
+    expect(
+      modelAssessmentSchema.safeParse({
+        ...input,
+        findings: [{ ...finding, evidence: [{ ...evidence, frameId: "../etc/passwd" }] }],
+      }).success,
+    ).toBe(false);
+    expect(modelAssessmentSchema.safeParse({ findings: [] }).success).toBe(false);
+    expect(modelAssessmentSchema.safeParse({ ...input, ignorePreviousInstructions: true }).success).toBe(false);
+    expect(
+      modelAssessmentSchema.safeParse({
+        ...input,
+        findings: Array.from({ length: 31 }, () => finding),
+      }).success,
+    ).toBe(false);
+  });
+
   it("rejects malformed payloads", () => {
     expect(modelAssessmentSchema.safeParse("{").success).toBe(false);
     expect(modelAssessmentSchema.safeParse(null).success).toBe(false);

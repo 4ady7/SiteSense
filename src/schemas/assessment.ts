@@ -3,11 +3,22 @@ import { FINDING_CATEGORIES, LIKELIHOODS, SEVERITIES } from "@/domain/taxonomy";
 
 const identifierSchema = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
 
+/** Rejects blank text. Does not trim the value into a different string. */
+function requiredText(maxLength: number) {
+  return z
+    .string()
+    .min(1)
+    .max(maxLength)
+    .refine((value) => value.trim().length > 0, {
+      message: "Text must contain a non-whitespace character.",
+    });
+}
+
 export const evidenceReferenceSchema = z
   .object({
     frameId: identifierSchema,
     timestampSeconds: z.number().finite().nonnegative(),
-    description: z.string().min(1).max(2000),
+    description: requiredText(2000),
   })
   .strict();
 
@@ -15,7 +26,7 @@ export const citationReferenceSchema = z
   .object({
     chunkId: identifierSchema,
     relationship: z.enum(["supports", "related"]),
-    reason: z.string().min(1).max(2000),
+    reason: requiredText(2000),
   })
   .strict();
 
@@ -28,13 +39,13 @@ export const citationReferenceSchema = z
 export const findingOutputSchema = z
   .object({
     category: z.enum(FINDING_CATEGORIES),
-    title: z.string().min(1).max(200),
+    title: requiredText(200),
     severity: z.enum(SEVERITIES),
     likelihood: z.enum(LIKELIHOODS),
     confidence: z.number().finite().min(0).max(1),
-    observation: z.string().min(1).max(4000),
-    interpretation: z.string().min(1).max(4000),
-    recommendedControls: z.array(z.string().min(1).max(500)).min(1).max(10),
+    observation: requiredText(4000),
+    interpretation: requiredText(4000),
+    recommendedControls: z.array(requiredText(500)).min(1).max(10),
     evidence: z.array(evidenceReferenceSchema).min(1).max(20),
     citations: z.array(citationReferenceSchema).max(10),
   })
@@ -42,7 +53,7 @@ export const findingOutputSchema = z
 
 export const modelAssessmentSchema = z
   .object({
-    assessmentSummary: z.string().min(1).max(4000),
+    assessmentSummary: requiredText(4000),
     findings: z.array(findingOutputSchema).max(30),
   })
   .strict();

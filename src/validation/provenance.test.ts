@@ -104,4 +104,51 @@ describe("provenance validation", () => {
     });
     expect(issues.map((issue) => issue.code)).toContain("duplicate_frame_id");
   });
+
+  it("rejects a widened timestamp tolerance instead of treating a distant timestamp as a match", () => {
+    const assessment = parsedSample();
+    const evidence = assessment.findings[0]?.evidence[0];
+    if (!evidence) {
+      throw new Error("sample evidence missing");
+    }
+    evidence.timestampSeconds = 100;
+    const issues = validateProvenance(assessment, {
+      ...sampleProvenanceContext(),
+      timestampToleranceSeconds: 1000,
+    });
+    expect(issues.map((issue) => issue.code)).toEqual(["invalid_timestamp_tolerance"]);
+    expect(evidence.timestampSeconds).toBe(100);
+  });
+
+  it("rejects frames from more than one media item in a single context", () => {
+    const context = sampleProvenanceContext();
+    const frame = context.frames[0];
+    if (!frame) {
+      throw new Error("sample frame missing");
+    }
+    const issues = validateProvenance(parsedSample(), {
+      ...context,
+      frames: [frame, { ...frame, frameId: "frame_002", mediaId: "media_other", frameIndex: 1 }],
+    });
+    expect(issues.map((issue) => issue.code)).toContain("mixed_media");
+  });
+
+  it("rejects a frame record that could bless an out-of-range timestamp", () => {
+    const assessment = parsedSample();
+    const evidence = assessment.findings[0]?.evidence[0];
+    if (!evidence) {
+      throw new Error("sample evidence missing");
+    }
+    evidence.timestampSeconds = 0;
+    const context = sampleProvenanceContext();
+    const frame = context.frames[0];
+    if (!frame) {
+      throw new Error("sample frame missing");
+    }
+    const issues = validateProvenance(assessment, {
+      ...context,
+      frames: [{ ...frame, timestampSeconds: -0.1 }],
+    });
+    expect(issues.map((issue) => issue.code)).toEqual(["invalid_frame_record"]);
+  });
 });
